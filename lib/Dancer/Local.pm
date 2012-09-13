@@ -27,6 +27,8 @@ sub import {
         say "installed shared file for '$dist' in '$appdir'";
     }
     else {
+        no warnings 'uninitialized';
+
         $appdir = $ENV{DANCER_APPDIR} 
             || ( '.' x -f 'config.yml' )
             || File::HomeDir->my_dist_data($dist) 
