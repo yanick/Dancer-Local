@@ -1,4 +1,5 @@
 package Dancer::Local;
+# ABSTRACT: allows Dancer applications to be installed like modules
 
 use 5.10.0;
 
@@ -8,38 +9,54 @@ use warnings;
 use File::ShareDir 'dist_dir';
 use File::HomeDir;
 use File::Copy::Recursive qw/ dircopy /;
-
-# if DANCER_APPDIR is set, use that
-# check if already installed in DANCER_LOCALDIR,
-# if not, do it
-
+use File::Path qw/ make_path /;
+use List::MoreUtils qw/ after_incl /;
 
 sub import {
     my( $self, $dist ) = @_;
 
-    return if $ENV{DANCER_APPDIR};
+    my $appdir;
 
-    my $local_copy 
-        = $ENV{DANCER_APPDIR}
-        = File::HomeDir->my_dist_data($dist);
+    if ( my @to_install = after_incl { $_ eq '--install' } @ARGV ) {
+        make_path( $to_install[1] ) if defined $to_install[1];
 
-    unless ( $local_copy ) {
-        $local_copy = File::HomeDir->my_dist_data($dist,{create=>1});
+        $appdir = $to_install[1] // '.';
 
-        print "copying $dist app files to $local_copy...\n";
+        dircopy( dist_dir($dist) => $appdir );
 
-        dircopy( dist_dir($dist) => $local_copy );
+        say "installed shared file for '$dist' in '$appdir'";
+    }
+    else {
+        $appdir = $ENV{DANCER_APPDIR} 
+            || ( '.' x -f 'config.yml' )
+            || File::HomeDir->my_dist_data($dist) 
+            || create_local_copy($dist);
     }
 
-    if ( open my $fh, "$local_copy/REMOVE_ME" ) {
-        warn $_ while <$fh>;
+    $ENV{DANCER_APPDIR} = $appdir;
 
-        die "\n*** review the configuration files in '$local_copy'\n",
-            "*** delete '$local_copy/REMOVE_ME',\n",
+    if ( open my $fh, "$appdir/REMOVE_ME" ) {
+        say "\n", <$fh>, "\n", 
+            "*** review the configuration files in '$appdir'\n",
+            "*** delete '$appdir/REMOVE_ME',\n",
             "*** and run $0 again\n";
+
+        exit;
     }
 
-    return warn "running $dist from $local_copy";
+    say "running $dist from $appdir...";
+}
+
+sub create_local_copy {
+    my $dist = shift;
+
+    my $local_copy = File::HomeDir->my_dist_data($dist,{create=>1});
+
+    print "copying $dist app files to $local_copy...\n";
+
+    dircopy( dist_dir($dist) => $local_copy );
+
+    return $local_copy;
 }
 
 1;
